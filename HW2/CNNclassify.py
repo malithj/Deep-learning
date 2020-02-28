@@ -59,7 +59,7 @@ def load_data():
 def train(trainloader, testloader, net, criterion, optimizer, device):
     print("{0:>4s}   {1:>14s} {2:>12s} {3:>11s} {4:>10s}".format("Loop", "Train Loss", "Train Acc %", "Test Loss", "Test Acc %"))
     PATH = './model/cifar_net.pth'
-    length = 30
+    length = 500
     net.train()
     for epoch in range(length):  # loop over the dataset multiple times
         running_loss = 0.0
@@ -117,7 +117,7 @@ def test(image_path, net, device, classes):
     img = Image.open(image_path)
     img = TF.to_tensor(img)
     if img.shape[1] != 32 or img.shape[2] != 32:
-        img = transform.resize(img, (1, 3, 32, 32), mode='constant')
+        img = transform.resize(img, (1, 3, 32, 32), mode='constant', anti_aliasing=True, anti_aliasing_sigma=None)
         img = torch.from_numpy(img)
         print("Warning: Incorrect image input dimensions. Resizing using scalar interploation.")
     else:
