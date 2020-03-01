@@ -14,7 +14,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from skimage import io, transform
-
+import numpy as np
 from my_net import Net
 
 
@@ -59,7 +59,7 @@ def load_data():
 def train(trainloader, testloader, net, criterion, optimizer, device):
     print("{0:>4s}   {1:>14s} {2:>12s} {3:>11s} {4:>10s}".format("Loop", "Train Loss", "Train Acc %", "Test Loss", "Test Acc %"))
     PATH = './model/cifar_net.pth'
-    length = 500
+    length = 20
     net.train()
     for epoch in range(length):  # loop over the dataset multiple times
         running_loss = 0.0
@@ -107,7 +107,6 @@ def train(trainloader, testloader, net, criterion, optimizer, device):
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
             
-        torch.save(net.state_dict(), PATH)
         print("{0:>2d}/{1:d} {2:>15f} {3:>12f} {4:>11f} {5:>10f}".format(epoch, length, training_loss / len(trainloader), 100 * correct_train / total_train, testing_loss / len(testloader), 100 * correct / total)) 
 
 
@@ -117,12 +116,13 @@ def test(image_path, net, device, classes):
     img = Image.open(image_path)
     img = TF.to_tensor(img)
     if img.shape[1] != 32 or img.shape[2] != 32:
-        img = transform.resize(img, (1, 3, 32, 32), mode='constant', anti_aliasing=True, anti_aliasing_sigma=None)
+        img = transform.resize(img, (3, 32, 32), anti_aliasing=False, anti_aliasing_sigma=None)
         img = torch.from_numpy(img)
         print("Warning: Incorrect image input dimensions. Resizing using scalar interploation.")
     else:
-        img = transform.resize(img, (1, 3, 32, 32), mode='constant', anti_aliasing=True, anti_aliasing_sigma=None)
+        img = transform.resize(img, (3, 32, 32), anti_aliasing=False, anti_aliasing_sigma=None)
         img = torch.from_numpy(img)
+    img = img.unsqueeze(0)
     img = img.to(device)
     activation = {}
     def get_activation(name):
@@ -148,8 +148,10 @@ def test(image_path, net, device, classes):
         ax.xaxis.set_visible(False)
         ax.yaxis.set_visible(False)
         if idx < act.size(0):
-            ax.imshow(act[idx], cmap='gray')
-    plt.savefig('conv1.png')
+            data = act[idx].data.numpy()
+            data[data < 0] = 0
+            ax.imshow(data, norm=matplotlib.colors.Normalize(vmin=-0.05, vmax=0.05), cmap='Greys')
+    plt.savefig('CONV_rslt.png')
 
 
 if __name__ == '__main__':
@@ -167,7 +169,7 @@ if __name__ == '__main__':
     if mode == 'train':
         train_loader, test_loader = load_data()
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.5)
+        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
         train(train_loader, test_loader, net, criterion, optimizer, device)
     else:
         net.load_state_dict(torch.load(PATH))
