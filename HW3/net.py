@@ -1,5 +1,9 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+MAX_LENGTH=40
 
 
 class EncoderRNN(nn.Module):
@@ -19,11 +23,11 @@ class EncoderRNN(nn.Module):
 
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        return torch.zeros(1, 1, self.hidden_size)
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, max_length, dropout_p=0.1):
+    def __init__(self, hidden_size, output_size, max_length=MAX_LENGTH, dropout_p=0.1):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = output_size
@@ -58,4 +62,4 @@ class AttnDecoderRNN(nn.Module):
 
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        return torch.zeros(1, 1, self.hidden_size)
