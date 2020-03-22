@@ -154,7 +154,7 @@ def train_itrs(trainloader, encoder, decoder, device, n_iters, print_every=1000,
                     torch.save(encoder.state_dict(), ENC_PATH)
                     torch.save(decoder.state_dict(), DEC_PATH)
                     min_loss = print_loss_avg
-            print("{0:>4d} {1:>15.2f}% {2:>12f}".format(iter, (iter / (len(trainloader) * n_iters)) * 100, print_loss_avg))
+            print("{0:>4d} {1:>15.2f}% {2:>12f}".format(iter, (iter / len(trainloader)) * 100, print_loss_avg))
 
 
 def evaluate(encoder, decoder, input_tensor, device, max_length=MAX_LENGTH):
@@ -192,8 +192,10 @@ def evaluate(encoder, decoder, input_tensor, device, max_length=MAX_LENGTH):
         return decoded_words, decoder_attentions[:di + 1]
 
 
-def test(testloader, encoder, decoder, device):
+def test(testloader, encoder, decoder, device, input_lang, output_lang):
     _bleu_score = 0
+    _target_tensor_list = []
+    _decoded_output_list = []
     for iter, data in enumerate(testloader, 0):
         input_tensor = data['english_txt'][0].to(device)
         target_tensor = data['foriegn_txt'][0].to(device)
@@ -202,9 +204,10 @@ def test(testloader, encoder, decoder, device):
         if input_length >= MAX_LENGTH:
             continue
         decoded_output, attns = evaluate(encoder, decoder, input_tensor, device)
-        _bleu_score += bleu_score(target_tensor, decoded_output)
-    _bleu_score = _bleu_score / len(testloader)
-    print("Average BLEU: {15.12f}".format(_bleu_score))
+        _decoded_output_list.append(output_lang.sentenceFromTensor(decoded_output))
+        _target_tensor_list.append(output_lang.sentenceFromTensor(target_tensor))
+    _bleu_score = bleu_score(_target_tensor_list, _decoded_output_list)
+    print("Average BLEU: {0:15.12f}".format(_bleu_score))
 
 
 def translate(encoder, decoder, device, input_lang, output_lang):
@@ -248,7 +251,7 @@ if __name__ == '__main__':
         decoderRNN = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
         encoderRNN.load_state_dict(torch.load(ENC_PATH))
         decoderRNN.load_state_dict(torch.load(DEC_PATH))
-        test(test_loader, encoderRNN, decoderRNN, device)
+        test(test_loader, encoderRNN, decoderRNN, device, input_lang, output_lang)
     else:
         encoderRNN = EncoderRNN(input_lang.n_words, hidden_size).to(device)
         decoderRNN = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)

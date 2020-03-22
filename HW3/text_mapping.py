@@ -15,8 +15,22 @@ class Lang:
         self.word2count = {}
         self.index2word = {0: "SOS", 1: "EOS"}
         self.n_words = 2  # Count SOS and EOS
+    
+    
+    def unicodeToAscii(self, s):
+        return ''.join(
+            c for c in unicodedata.normalize('NFD', s)
+            if unicodedata.category(c) != 'Mn'
+        )
+
+    def normalizeString(self, s):
+        s = self.unicodeToAscii(s.lower().strip())
+        s = re.sub(r"([.!?])", r" \1", s)
+        s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
+        return s
 
     def addSentence(self, sentence):
+        sentence = self.normalizeString(sentence)
         for word in sentence.split(' '):
             word_ = word.strip('\n')
             word_ = word_.strip('\t')
@@ -45,22 +59,7 @@ class Lang:
         for idx in tensor:
             if idx in self.index2word:
                 list_.append(self.index2word[idx])
-        print(list_)
         return list_
-
-    def unicodeToAscii(self, s):
-        return ''.join(
-            c for c in unicodedata.normalize('NFD', s)
-            if unicodedata.category(c) != 'Mn'
-        )
-
-    # Lowercase, trim, and remove non-letter characters
-
-    def normalizeString(self, s):
-        s = unicodeToAscii(s.lower().strip())
-        s = re.sub(r"([.!?])", r" \1", s)
-        s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
-        return s
 
 
 class TextMappingDataset(Dataset):
