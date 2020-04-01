@@ -2,6 +2,8 @@ import torch
 import unicodedata
 import re
 import pandas as pd
+import pickle
+import os
 from torch.utils.data import Dataset, DataLoader
 
 SOS_token = 0
@@ -46,7 +48,7 @@ class Lang:
             self.word2count[word] += 1
     
     def indexesFromSentence(self, sentence):
-        return [self.word2index[word] for word in sentence.split(' ')]
+        return [self.word2index[word] if word in self.word2index else 0 for word in sentence.split(' ')]
 
     def tensorFromSentence(self, sentence):
         sentence = self.normalizeString(sentence)
@@ -59,7 +61,17 @@ class Lang:
         for idx in tensor:
             if idx in self.index2word:
                 list_.append(self.index2word[idx])
+            else:
+                list_.append(self.index2word[0])
         return list_
+
+    def __get_state__(self):
+        state = self.__dict__.copy()
+        return state
+
+    def __setstate__(self, state):
+        # Restore instance attributes (i.e., filename and lineno).
+        self.__dict__.update(state)
 
 
 class TextMappingDataset(Dataset):
@@ -77,15 +89,27 @@ class TextMappingDataset(Dataset):
         self.output_lang = Lang("Foriegn")
         self.root_dir = root_dir
         self.transform = transform
-        self.__language_init__()
+        self.__language_init__(english_file, foriegn_file)
 
-    def __language_init__(self):
+    def __language_init__(self, english_file, foriegn_file):
         print("Processing Data")
+        file_name_e = english_file.split('/')[2].split('.')[0] + "_" + english_file.split('/')[2].split('.')[1]
+        file_name_f = foriegn_file.split('/')[2].split('.')[0] + "_" + foriegn_file.split('/')[2].split('.')[1]
+
+        if os.path.exists('./model/{0:}.p'.format(file_name_e)):
+            self.input_lang = pickle.load(open('./model/{0:}.p'.format(file_name_e), "rb"))
+            self.output_lang = pickle.load(open('./model/{0:}.p'.format(file_name_f), "rb"))
+            print("Loaded vocabulary from pickled sources")
+            return       
+
         for i in range(len(self.english_txt)):
             self.input_lang.addSentence(str(self.english_txt.iloc[i]))
             self.output_lang.addSentence(str(self.foriegn_txt.iloc[i]))
         print("ENC_VOCAB: {0:}".format(self.input_lang.n_words))
         print("DEC_VOCAB: {0:}".format(self.output_lang.n_words))
+        print("Loaded vocabulary from processing data")
+        pickle.dump(self.input_lang, open("./model/{0:}.p".format(file_name_e), "wb"))
+        pickle.dump(self.output_lang, open("./model/{0:}.p".format(file_name_f), "wb"))
 
     def __len__(self):
         return len(self.english_txt)
@@ -94,8 +118,8 @@ class TextMappingDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        _english_idx = self.input_lang.tensorFromSentence(str(self.english_txt.iloc[idx]))
-        _foriegn_idx = self.output_lang.tensorFromSentence(str(self.foriegn_txt.iloc[idx]))
+        _english_idx = self.input_lang.tensorFromSentence(self.english_txt.iloc[idx].to_string())
+        _foriegn_idx = self.output_lang.tensorFromSentence(self.foriegn_txt.iloc[idx].to_string())
         sample = {'english_txt': _english_idx, 'foriegn_txt': _foriegn_idx}
 
         if self.transform:

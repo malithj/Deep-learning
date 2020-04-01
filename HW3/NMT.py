@@ -14,14 +14,14 @@ import torchvision.transforms.functional as TF
 from skimage import io, transform
 from torchtext.data.metrics import bleu_score
 
-from net import EncoderRNN, AttnDecoderRNN
+from net import EncoderRNN, AttnDecoderRNN, DecoderRNN
 from text_mapping import TextMappingDataset
 
 
 teacher_forcing_ratio = 0.5
 SOS_token = 0
 EOS_token = 1
-MAX_LENGTH=40
+MAX_LENGTH= 50
 
 
 def parse():
@@ -76,22 +76,20 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
-
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
-
     encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
 
-    for ei in range(input_length):
+    for ei in range(min(MAX_LENGTH, input_length)):
         encoder_output, encoder_hidden = encoder(
             input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
-    decoder_hidden = encoder_hidden.to(device)
+    decoder_hidden = decoder.initHidden().to(device)
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -124,37 +122,35 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
 
 
 def train_itrs(trainloader, encoder, decoder, device, n_iters, print_every=1000, learning_rate=0.01):
-    plot_losses = []
     print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
 
     ENC_PATH = './model/encoder.pth'
     DEC_PATH = './model/decoder.pth'
-
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    criterion = nn.NLLLoss()
+    
+    encoder.init_weight()
+    decoder.init_weight()
+    encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
+    decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
     min_loss = np.inf
     print("Loading Model....")
     print("{0:>4s}  {1:>15s} {2:>12s}".format("Loop", "Progress", "Train Loss"))
-    for iter, data in enumerate(trainloader, 0):
-        input_tensor = data['english_txt'][0].to(device)
-        target_tensor = data['foriegn_txt'][0].to(device)
-
-        loss = train(input_tensor, target_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion, device)
-        print_loss_total += loss
-        plot_loss_total += loss
-
+    for loop in range(n_iters):
+        for iter, data in enumerate(trainloader, 0):
+            input_tensor = data['english_txt'][0].to(device)   # adjust batch size
+            target_tensor = data['foriegn_txt'][0].to(device)  # adjust batch size
+            loss = train(input_tensor, target_tensor, encoder,
+                         decoder, encoder_optimizer, decoder_optimizer, criterion, device)
+            print_loss_total += loss
         
-        if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            if min_loss > print_loss_avg:
-                    torch.save(encoder.state_dict(), ENC_PATH)
-                    torch.save(decoder.state_dict(), DEC_PATH)
-                    min_loss = print_loss_avg
-            print("{0:>4d} {1:>15.2f}% {2:>12f}".format(iter, (iter / len(trainloader)) * 100, print_loss_avg))
+            if iter % print_every == 0:
+                print_loss_avg = print_loss_total / (loop * len(trainloader) + print_every)
+                print_loss_total = 0
+                if min_loss > print_loss_avg:
+                        torch.save(encoder.state_dict(), ENC_PATH)
+                        torch.save(decoder.state_dict(), DEC_PATH)
+                        min_loss = print_loss_avg
+                print("{0:>4d} {1:>15.2f}% {2:>12f}".format(loop * len(trainloader) + iter, ((loop * len(trainloader) + iter) / (n_iters * len(trainloader))) * 100, print_loss_avg))
 
 
 def evaluate(encoder, decoder, input_tensor, device, max_length=MAX_LENGTH):
@@ -171,7 +167,7 @@ def evaluate(encoder, decoder, input_tensor, device, max_length=MAX_LENGTH):
 
         decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
 
-        decoder_hidden = encoder_hidden
+        decoder_hidden = decoder.initHidden().to(device)
 
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
@@ -199,15 +195,17 @@ def test(testloader, encoder, decoder, device, input_lang, output_lang):
     for iter, data in enumerate(testloader, 0):
         input_tensor = data['english_txt'][0].to(device)
         target_tensor = data['foriegn_txt'][0].to(device)
-    
+        
         input_length = input_tensor.size()[0]
-        if input_length >= MAX_LENGTH:
+        if input_length > MAX_LENGTH:
             continue
         decoded_output, attns = evaluate(encoder, decoder, input_tensor, device)
         _decoded_output_list.append(output_lang.sentenceFromTensor(decoded_output))
-        _target_tensor_list.append(output_lang.sentenceFromTensor(target_tensor))
-    _bleu_score = bleu_score(_target_tensor_list, _decoded_output_list)
-    print("Average BLEU: {0:15.12f}".format(_bleu_score))
+        _intermediate_target = target_tensor.tolist()
+        _intermediate_target = [x[0] for x in _intermediate_target]
+        _target_tensor_list.append(output_lang.sentenceFromTensor(_intermediate_target))
+    _bleu_score = bleu_score(_target_tensor_list, _decoded_output_list, max_n=1, weights=[1])
+    print("Average BLEU: {0:15.6f}".format(_bleu_score))
 
 
 def translate(encoder, decoder, device, input_lang, output_lang):
@@ -239,21 +237,25 @@ if __name__ == '__main__':
     ENC_PATH = './model/encoder.pth'
     DEC_PATH = './model/decoder.pth'
     hidden_size = 256
+    n_layers=3
+    n_iters=50
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     train_loader, input_lang, output_lang = load_train_data()
     if mode == 'train':
-        encoderRNN = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+        encoderRNN = EncoderRNN(input_lang.n_words, hidden_size, device, n_layers).to(device)
         decoderRNN = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
-        train_itrs(train_loader, encoderRNN, decoderRNN, device,  n_iters=10, print_every=1000, learning_rate=0.01)
+        train_itrs(train_loader, encoderRNN, decoderRNN, device,  n_iters=n_iters, print_every=1000, learning_rate=0.001)
     elif mode == 'test':
         test_loader,_,_ = load_test_data()
-        encoderRNN = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+        test_loader.dataset.input_lang = input_lang
+        test_loader.dataset.output_lang = output_lang
+        encoderRNN = EncoderRNN(input_lang.n_words, hidden_size, device, n_layers).to(device)
         decoderRNN = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
         encoderRNN.load_state_dict(torch.load(ENC_PATH))
         decoderRNN.load_state_dict(torch.load(DEC_PATH))
         test(test_loader, encoderRNN, decoderRNN, device, input_lang, output_lang)
     else:
-        encoderRNN = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+        encoderRNN = EncoderRNN(input_lang.n_words, hidden_size, device, n_layers).to(device)
         decoderRNN = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
         encoderRNN.load_state_dict(torch.load(ENC_PATH))
         decoderRNN.load_state_dict(torch.load(DEC_PATH))
