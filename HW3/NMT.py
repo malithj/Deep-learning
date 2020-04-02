@@ -12,7 +12,7 @@ import random
 import numpy as np
 import torchvision.transforms.functional as TF
 from skimage import io, transform
-from torchtext.data.metrics import bleu_score
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 from net import EncoderRNN, AttnDecoderRNN, DecoderRNN
 from text_mapping import TextMappingDataset
@@ -190,6 +190,7 @@ def evaluate(encoder, decoder, input_tensor, device, max_length=MAX_LENGTH):
 
 def test(testloader, encoder, decoder, device, input_lang, output_lang):
     _bleu_score = 0
+    _count = 0
     _target_tensor_list = []
     _decoded_output_list = []
     for iter, data in enumerate(testloader, 0):
@@ -200,12 +201,15 @@ def test(testloader, encoder, decoder, device, input_lang, output_lang):
         if input_length > MAX_LENGTH:
             continue
         decoded_output, attns = evaluate(encoder, decoder, input_tensor, device)
-        _decoded_output_list.append(output_lang.sentenceFromTensor(decoded_output))
+        _decoded_output = output_lang.sentenceFromTensor(decoded_output)
+        _decoded_output_list.append(_decoded_output)
         _intermediate_target = target_tensor.tolist()
         _intermediate_target = [x[0] for x in _intermediate_target]
-        _target_tensor_list.append(output_lang.sentenceFromTensor(_intermediate_target))
-    _bleu_score = bleu_score(_target_tensor_list, _decoded_output_list, max_n=1, weights=[1])
-    print("Average BLEU: {0:15.6f}".format(_bleu_score))
+        _target = output_lang.sentenceFromTensor(_intermediate_target)
+        _target_tensor_list.append(_target)
+        _bleu_score += sentence_bleu([_target], _decoded_output, weights=[1], smoothing_function=SmoothingFunction().method1)
+        _count += 1
+    print("Average BLEU: {0:15.6f}".format(_bleu_score / _count))
 
 
 def translate(encoder, decoder, device, input_lang, output_lang):

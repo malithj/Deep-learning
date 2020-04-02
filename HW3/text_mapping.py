@@ -60,9 +60,9 @@ class Lang:
         list_ = list()
         for idx in tensor:
             if idx in self.index2word:
-                list_.append(self.index2word[idx])
+                list_.append(str(self.index2word[idx]))
             else:
-                list_.append(self.index2word[0])
+                list_.append(str(self.index2word[0]))
         return list_
 
     def __get_state__(self):
